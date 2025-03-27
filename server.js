@@ -9,8 +9,8 @@ const app = express();
 const PORT = process.env.PORT || 8080;
 
 // URL dell'interfaccia web di n8n
-const N8N_URL = process.env.N8N_URL || 'https://flag-christ-breast-latest.trycloudflare.com';
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://flag-christ-breast-latest.trycloudflare.com/webhook/123abc';
+const N8N_URL = process.env.N8N_URL || 'https://switched-perhaps-cancellation-stating.trycloudflare.com';
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://switched-perhaps-cancellation-stating.trycloudflare.com/webhook/123abc';
 
 // Middleware per parsing del body
 app.use(bodyParser.urlencoded({ extended: true }));
