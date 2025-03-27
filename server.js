@@ -2,7 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const twilio = require('twilio');
+const axios = require('axios');
 
 // Inizializza l'app Express
 const app = express();
@@ -12,15 +12,15 @@ const PORT = process.env.PORT || 8080;
 const N8N_URL = process.env.N8N_URL || 'https://switched-perhaps-cancellation-stating.trycloudflare.com';
 const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://switched-perhaps-cancellation-stating.trycloudflare.com/webhook/123abc';
 
+// Configurazione di WhatsApp Business API di Meta
+// IMPORTANTE: Sostituisci questi valori con i tuoi!
+const WHATSAPP_TOKEN = 'INSERISCI_IL_TUO_TOKEN_QUI'; // Il token di accesso permanente di WhatsApp Business
+const WHATSAPP_VERIFICATION_TOKEN = 'INSERISCI_IL_TUO_TOKEN_DI_VERIFICA_QUI'; // Il token che hai scelto per la verifica del webhook
+const WHATSAPP_PHONE_ID = 'INSERISCI_IL_TUO_PHONE_ID_QUI'; // L'ID del tuo numero di telefono WhatsApp Business
+
 // Middleware per parsing del body
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
-
-// Inizializza client Twilio
-const twilioClient = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
 
 // Route principale - reindirizza a n8n
 app.get('/', (req, res) => {
@@ -38,75 +38,130 @@ app.get('/status', (req, res) => {
   });
 });
 
-// Webhook per ricevere messaggi da Twilio WhatsApp
+// Webhook per la verifica WhatsApp (GET) e ricezione messaggi (POST)
+app.get('/webhook', (req, res) => {
+  console.log('Richiesta di verifica webhook WhatsApp');
+  
+  // Verifica se questa è una richiesta di verifica del webhook
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  
+  // Controlla se il token corrisponde a quello che hai impostato
+  if (mode === 'subscribe' && token === WHATSAPP_VERIFICATION_TOKEN) {
+    console.log('Verifica webhook superata!');
+    res.status(200).send(challenge);
+  } else {
+    // Non autorizzato
+    console.error('Verifica webhook fallita! Token non valido.');
+    res.sendStatus(403);
+  }
+});
+
 app.post('/webhook', async (req, res) => {
-  console.log('Webhook WhatsApp chiamato');
+  console.log('Webhook WhatsApp chiamato (POST)');
   
   try {
-    // Estrai i dati dal messaggio WhatsApp
-    const incomingMsg = req.body.Body || '';
-    const sender = req.body.From || '';
-    
-    console.log(`Messaggio ricevuto da ${sender}: ${incomingMsg}`);
-    
-    // Prepara i dati da inviare a n8n
-    const n8nData = {
-      message: incomingMsg,
-      sender: sender,
-      timestamp: new Date().toISOString(),
-      platform: 'whatsapp',
-      twilioData: req.body
-    };
-    
-    try {
-      // Invia i dati a n8n e attendi la risposta
-      console.log(`Inoltro a n8n: ${N8N_WEBHOOK_URL}`);
-      const axios = require('axios');
-      const n8nResponse = await axios.post(N8N_WEBHOOK_URL, n8nData);
-      console.log('Risposta da n8n:', n8nResponse.data);
+    // Assicurati che sia una richiesta valida da WhatsApp
+    if (req.body.object && req.body.entry && 
+        req.body.entry[0].changes && 
+        req.body.entry[0].changes[0] && 
+        req.body.entry[0].changes[0].value.messages && 
+        req.body.entry[0].changes[0].value.messages[0]) {
       
-      // Estrai la risposta da n8n
-      let responseMsg = 'Grazie per il tuo messaggio.';
+      // Estrai i dati dal messaggio WhatsApp
+      const message = req.body.entry[0].changes[0].value.messages[0];
+      const sender = message.from;
+      const incomingMsg = message.text?.body || '';
       
-      if (n8nResponse.data && n8nResponse.data.responseMessage) {
-        responseMsg = n8nResponse.data.responseMessage;
-      } else {
-        // Fallback di risposta se n8n non fornisce una risposta specifica
-        if (incomingMsg.toLowerCase().includes('ciao')) {
-          responseMsg = 'Ciao! Sono il tuo chatbot WhatsApp. Come posso aiutarti?';
-        } else if (incomingMsg.toLowerCase().includes('aiuto')) {
-          responseMsg = 'Puoi chiedermi informazioni su orario, meteo, o altro.';
+      console.log(`Messaggio ricevuto da ${sender}: ${incomingMsg}`);
+      
+      // Prepara i dati da inviare a n8n
+      const n8nData = {
+        message: incomingMsg,
+        sender: sender,
+        timestamp: new Date().toISOString(),
+        platform: 'whatsapp',
+        metaData: req.body // Invia l'intero payload di Meta a n8n
+      };
+      
+      try {
+        // Invia i dati a n8n
+        console.log(`Inoltro a n8n: ${N8N_WEBHOOK_URL}`);
+        const n8nResponse = await axios.post(N8N_WEBHOOK_URL, n8nData);
+        console.log('Risposta da n8n:', n8nResponse.data);
+        
+        // Estrai la risposta da n8n
+        let responseMsg = 'Grazie per il tuo messaggio.';
+        
+        if (n8nResponse.data && n8nResponse.data.responseMessage) {
+          responseMsg = n8nResponse.data.responseMessage;
+        } else {
+          // Fallback di risposta se n8n non fornisce una risposta specifica
+          if (incomingMsg.toLowerCase().includes('ciao')) {
+            responseMsg = 'Ciao! Sono il tuo chatbot WhatsApp. Come posso aiutarti?';
+          } else if (incomingMsg.toLowerCase().includes('aiuto')) {
+            responseMsg = 'Puoi chiedermi informazioni su orario, meteo, o altro.';
+          }
         }
+        
+        // Invia la risposta tramite l'API di Meta
+        await sendWhatsAppMessage(sender, responseMsg);
+        
+      } catch (n8nError) {
+        console.error('Errore nella comunicazione con n8n:', n8nError.message);
+        
+        // In caso di errore con n8n, rispondi con un messaggio predefinito
+        await sendWhatsAppMessage(sender, 'Grazie per il tuo messaggio. Il nostro sistema sta elaborando la tua richiesta.');
       }
       
-      // Invia la risposta tramite Twilio
-      const twiml = new twilio.twiml.MessagingResponse();
-      twiml.message(responseMsg);
-      res.writeHead(200, {'Content-Type': 'text/xml'});
-      res.end(twiml.toString());
+      // Rispondi a Meta con 200 OK
+      res.status(200).send('OK');
       
-    } catch (n8nError) {
-      console.error('Errore nella comunicazione con n8n:', n8nError.message);
-      
-      // In caso di errore con n8n, rispondi con un messaggio predefinito
-      const twiml = new twilio.twiml.MessagingResponse();
-      twiml.message('Grazie per il tuo messaggio. Il nostro sistema sta elaborando la tua richiesta.');
-      res.writeHead(200, {'Content-Type': 'text/xml'});
-      res.end(twiml.toString());
+    } else {
+      // Non è un formato di messaggio valido
+      console.log('Richiesta non valida o senza messaggio.');
+      res.sendStatus(400);
     }
     
   } catch (error) {
     console.error('Errore nella gestione del webhook:', error);
-    // Invia comunque una risposta valida per Twilio
-    res.writeHead(200, {'Content-Type': 'text/xml'});
-    res.end(new twilio.twiml.MessagingResponse().toString());
+    res.sendStatus(500);
   }
 });
+
+// Funzione per inviare un messaggio tramite l'API WhatsApp di Meta
+async function sendWhatsAppMessage(recipient, text) {
+  try {
+    const response = await axios({
+      method: 'POST',
+      url: `https://graph.facebook.com/v18.0/${WHATSAPP_PHONE_ID}/messages`,
+      headers: {
+        'Authorization': `Bearer ${WHATSAPP_TOKEN}`,
+        'Content-Type': 'application/json'
+      },
+      data: {
+        messaging_product: 'whatsapp',
+        to: recipient,
+        type: 'text',
+        text: {
+          body: text
+        }
+      }
+    });
+    
+    console.log('Messaggio inviato con successo:', response.data);
+    return response.data;
+  } catch (error) {
+    console.error('Errore nell\'invio del messaggio WhatsApp:', error.response?.data || error.message);
+    throw error;
+  }
+}
 
 // Avvia il server
 app.listen(PORT, () => {
   console.log(`Server in esecuzione sulla porta ${PORT}`);
   console.log(`Reindirizzamento da / a: ${N8N_URL}`);
-  console.log(`Webhook URL: http://localhost:${PORT}/webhook`);
+  console.log(`Webhook URL per WhatsApp: http://localhost:${PORT}/webhook`);
   console.log(`n8n Webhook configurato: ${N8N_WEBHOOK_URL}`);
 });
