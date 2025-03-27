@@ -14,9 +14,9 @@ const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://switched-perhaps
 
 // Configurazione di WhatsApp Business API di Meta
 // IMPORTANTE: Sostituisci questi valori con i tuoi!
-const WHATSAPP_TOKEN = 'INSERISCI_IL_TUO_TOKEN_QUI'; // Il token di accesso permanente di WhatsApp Business
+const WHATSAPP_TOKEN = 'EAAaN7D6jfa0BO51ti1ZA6pVJpIOfXaaZCmCA6gXRJVCvzmX3FTQV1nT6RNSQNaws07WOn138eoQTd1auEsJRWeP4eIsr3hYlcp9ZC4BZAiMZAHOKjAjVWIozX9q6BmsIqDDamRpLzlOBSdOajZBBvNVzByv3Yb2V7FwgZBcOP1HlkWCfE9ZBwQoP5xmfFcpqBEgZBtBzifyjuwdnpGw38lSZBbVyuhUvYqO3TDD7spxiay'; // Il token di accesso permanente di WhatsApp Business
 const WHATSAPP_VERIFICATION_TOKEN = 'INSERISCI_IL_TUO_TOKEN_DI_VERIFICA_QUI'; // Il token che hai scelto per la verifica del webhook
-const WHATSAPP_PHONE_ID = 'INSERISCI_IL_TUO_PHONE_ID_QUI'; // L'ID del tuo numero di telefono WhatsApp Business
+const WHATSAPP_PHONE_ID = '531630253377684'; // L'ID del tuo numero di telefono WhatsApp Business
 
 // Middleware per parsing del body
 app.use(bodyParser.urlencoded({ extended: true }));
