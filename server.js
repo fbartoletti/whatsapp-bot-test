@@ -2,15 +2,15 @@
 require('dotenv').config();
 const express = require('express');
 const bodyParser = require('body-parser');
-const axios = require('axios');
 const twilio = require('twilio');
 
 // Inizializza l'app Express
 const app = express();
 const PORT = process.env.PORT || 8080;
 
-// URL del webhook n8n - SOSTITUISCI CON IL TUO URL CLOUDFLARE TUNNEL + PERCORSO WEBHOOK
-const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://your-tunnel-url.trycloudflare.com/webhook/123abc';
+// URL dell'interfaccia web di n8n
+const N8N_URL = process.env.N8N_URL || 'https://tuo-url-n8n.trycloudflare.com';
+const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'https://tuo-url-n8n.trycloudflare.com/webhook/123abc';
 
 // Middleware per parsing del body
 app.use(bodyParser.urlencoded({ extended: true }));
@@ -22,12 +22,23 @@ const twilioClient = twilio(
   process.env.TWILIO_AUTH_TOKEN
 );
 
-// Route principale per verificare che il server funzioni
+// Route principale - reindirizza a n8n
 app.get('/', (req, res) => {
-  res.send('Il server del WhatsApp Bot è attivo! Integrazione con n8n configurata.');
+  console.log('Richiesta alla homepage, reindirizzamento a n8n');
+  res.redirect(N8N_URL);
 });
 
-// Webhook per ricevere messaggi da Twilio WhatsApp e inoltrarli a n8n
+// Una route di status per verificare funzionamento senza redirect
+app.get('/status', (req, res) => {
+  res.json({
+    status: 'online',
+    service: 'WhatsApp Bot',
+    n8n_url: N8N_URL,
+    webhook_url: N8N_WEBHOOK_URL
+  });
+});
+
+// Webhook per ricevere messaggi da Twilio WhatsApp
 app.post('/webhook', async (req, res) => {
   console.log('Webhook WhatsApp chiamato');
   
@@ -35,7 +46,6 @@ app.post('/webhook', async (req, res) => {
     // Estrai i dati dal messaggio WhatsApp
     const incomingMsg = req.body.Body || '';
     const sender = req.body.From || '';
-    const profileName = req.body.ProfileName || '';
     
     console.log(`Messaggio ricevuto da ${sender}: ${incomingMsg}`);
     
@@ -43,7 +53,6 @@ app.post('/webhook', async (req, res) => {
     const n8nData = {
       message: incomingMsg,
       sender: sender,
-      profileName: profileName,
       timestamp: new Date().toISOString(),
       platform: 'whatsapp',
       twilioData: req.body
@@ -52,6 +61,7 @@ app.post('/webhook', async (req, res) => {
     try {
       // Invia i dati a n8n e attendi la risposta
       console.log(`Inoltro a n8n: ${N8N_WEBHOOK_URL}`);
+      const axios = require('axios');
       const n8nResponse = await axios.post(N8N_WEBHOOK_URL, n8nData);
       console.log('Risposta da n8n:', n8nResponse.data);
       
@@ -93,42 +103,10 @@ app.post('/webhook', async (req, res) => {
   }
 });
 
-// Rotta per inviare messaggi proattivi (può essere chiamata da n8n)
-app.post('/send-message', async (req, res) => {
-  try {
-    const { to, message } = req.body;
-    
-    if (!to || !message) {
-      return res.status(400).json({ 
-        success: false, 
-        error: 'I parametri "to" e "message" sono obbligatori' 
-      });
-    }
-    
-    // Formatta il numero destinatario nel formato WhatsApp di Twilio
-    const recipient = to.startsWith('whatsapp:') ? to : `whatsapp:${to}`;
-    
-    // Invia il messaggio tramite API Twilio
-    const result = await twilioClient.messages.create({
-      body: message,
-      from: process.env.TWILIO_WHATSAPP_NUMBER,
-      to: recipient
-    });
-    
-    console.log('Messaggio inviato:', result.sid);
-    res.json({ success: true, messageId: result.sid });
-  } catch (error) {
-    console.error('Errore nell\'invio del messaggio:', error);
-    res.status(500).json({ 
-      success: false, 
-      error: error.message 
-    });
-  }
-});
-
 // Avvia il server
 app.listen(PORT, () => {
   console.log(`Server in esecuzione sulla porta ${PORT}`);
+  console.log(`Reindirizzamento da / a: ${N8N_URL}`);
   console.log(`Webhook URL: http://localhost:${PORT}/webhook`);
   console.log(`n8n Webhook configurato: ${N8N_WEBHOOK_URL}`);
 });
